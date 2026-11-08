@@ -267,15 +267,38 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Workaround GitHub release CDN - Gradle distro mirror
+      - name: Workaround GitHub release CDN - pre-seed Gradle distribution
+        # services.gradle.org redirige vers les release assets GitHub, en 504 cote infra.
+        # On pre-installe la distribution Gradle dans le cache du wrapper, avec le hash
+        # MD5(base36) de l'URL d'origine, pour ne PAS toucher a l'arbre de travail
+        # (le build AAPS refuse un working tree modifie).
         run: |
-          set -e
-          F=gradle/wrapper/gradle-wrapper.properties
-          echo "--- before ---"; cat "$F"
-          sed -i 's#services\.gradle\.org/distributions/#mirrors.cloud.tencent.com/gradle/#g' "$F"
-          sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$F"
-          sed -i 's/^retries=.*/retries=5/' "$F"
-          echo "--- after ---"; cat "$F"
+          set -euo pipefail
+          V=9.8.2
+          URL="https://services.gradle.org/distributions/gradle-${V}-bin.zip"
+          HASH=$(URL="$URL" python3 - <<'EOF'
+          import hashlib, os
+          d = hashlib.md5(os.environ["URL"].encode()).digest()
+          n = int.from_bytes(d, "big")
+          digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+          s = ""
+          while n:
+              s = digits[n % 36] + s
+              n //= 36
+          print(s or "0")
+          EOF
+          )
+          GUH="${GRADLE_USER_HOME:-$HOME/.gradle}"
+          DEST="$GUH/wrapper/dists/gradle-${V}-bin/${HASH}"
+          echo "Target dist dir: $DEST"
+          mkdir -p "$DEST"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 \
+            -o /tmp/gradle-dist.zip "https://mirrors.cloud.tencent.com/gradle/gradle-${V}-bin.zip"
+          unzip -q -o /tmp/gradle-dist.zip -d "$DEST"
+          rm -f /tmp/gradle-dist.zip "$DEST"/*.part "$DEST"/*.lck
+          touch "$DEST/gradle-${V}-bin.zip.ok"
+          ls "$DEST"
+          echo "git status (doit rester vide):"; git status -s
 
       - name: Build APKs
         run: |
