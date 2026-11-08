@@ -267,6 +267,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Workaround GitHub release CDN - Gradle distro mirror
+        run: |
+          set -e
+          F=gradle/wrapper/gradle-wrapper.properties
+          echo "--- before ---"; cat "$F"
+          sed -i 's#services\.gradle\.org/distributions/#mirrors.cloud.tencent.com/gradle/#g' "$F"
+          sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$F"
+          sed -i 's/^retries=.*/retries=5/' "$F"
+          echo "--- after ---"; cat "$F"
+
       - name: Build APKs
         run: |
               ./gradlew :app:assemble${{ env.BUILD_VARIANT }} :wear:assemble${{ env.BUILD_VARIANT }} \
